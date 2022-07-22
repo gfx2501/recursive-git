@@ -21,71 +21,86 @@
 #              Adds repository duration
 # 2021/09 : v9.1 Fixes configuration file loading
 # 2021/10 : v10 Adds repository average duration in footer
+# 2022/01 : v11 Adds repository progress
+#               Fixes global repositories count
+# 2022/06 : v12 Sanitizes variable names and adds readonly for constants
+# 2022/06 : v13 Adds log of executions' statistics
 
 # Start time
 start=$(date +%s%3N)
 
-# Version
-name=rgit
-major=10
-minor=0
-releaseDate="2021/10/11"
+# Defaults, not readonly because overridden by configuration file
+COMMAND="status"
+EXCLUDED=""
+MAX_DEPTH=2
+THEME="dark"
+STAT=1
 
-conf=".$name"
+# Version
+readonly NAME=rgit
+readonly MAJOR=13
+readonly MINOR=0
+readonly RELEASE_DATE="2022/06/13"
+
+# Configuration filename
+readonly CONF_FILE=".$NAME"
 
 # Colors reference (add '01;' for lighter color like in \033[01;36m for light cyan)
-# colBlack='\033[30m'
-# colRed='\033[31m'
-# colGreen='\033[32m'
-colYellow='\033[33m'
-colYellowLight='\033[01;33m'
-colBlue='\033[34m'
-colBlueLight='\033[01;34m'
-# colMagenta='\033[35m'
-colCyan='\033[36m'
-colCyanLight='\033[01;36m'
-# colWhite='\033[37m'
-colReset='\033[00m'
+# readonly COL_BLACK='\033[30m'
+# readonly COL_RED='\033[31m'
+# readonly COL_GREEN='\033[32m'
+readonly COL_YELLOW='\033[33m'
+readonly COL_YELLOW_LIGHT='\033[01;33m'
+readonly COL_BLUE='\033[34m'
+readonly COL_BLUE_LIGHT='\033[01;34m'
+# readonly COL_MAGENTA='\033[35m'
+readonly COL_CYAN='\033[36m'
+readonly COL_CYAN_LIGHT='\033[01;36m'
+# readonly COL_WHITE='\033[37m'
+readonly COL_RESET='\033[00m'
 
 # Writes default configuration file
-function confFile {
-    if [[ -f "$conf" ]]
+function confFile() {
+    if [[ -f "$CONF_FILE" ]]
     then
-        echo "Configuration file $conf already exist !"
-        ls -al "$conf"
+        echo "Configuration file $CONF_FILE already exist !"
+        ls -al "$CONF_FILE"
     else
-        cat << EOM >"$conf"
+        cat << EOM >"$CONF_FILE"
 # recursive git configuration file
 
 # List of excluded repositories (separated by two dot ":")
 EXCLUDED="redkryptonite:old/smallville:krypton/*"
 
 # Default command (used when no arguments provided) as with --command
-#COMMAND=status
+#COMMAND="$COMMAND"
 
 # Maximum depth of search
-#MAXDEPTH=5
+#MAX_DEPTH=$MAX_DEPTH
 
 # Color theme (dark|light|no)
-#THEME=dark
+#THEME="$THEME"
+
+# Log statistics (0|1)
+STAT=$STAT
 EOM
-        echo "Configuration file $conf created"
-        ls -al "$conf"
+        echo "Configuration file $CONF_FILE created"
+        ls -al "$CONF_FILE"
     fi
 }
 
 # Prints help message
-function help {
+function help() {
     read -r -d '' msgHelp << EOM
 Recursively visits the folder and its sub folders to execute a git command.
 
 Usage:
   `basename ${0}` -h | --help
-  `basename ${0}` [-d | -depth <number>] -s | --status
-  `basename ${0}` [-d | -depth <number>] [-n <number>] [-g | --graph] -l | --log
-  `basename ${0}` [-d | -depth <number>] -p | --pull
-  `basename ${0}` [-d | -depth <number>] -b | --branch-name
-  `basename ${0}` [-d | -depth <number>] -c | --command <args>
+  `basename ${0}` [-d | --depth <number>] -s | --status
+  `basename ${0}` [-d | --depth <number>] [-n <number>] [-g | --graph] -l | --log
+  `basename ${0}` [-d | --depth <number>] -p | --pull
+  `basename ${0}` [-d | --depth <number>] -b | --branch-name
+  `basename ${0}` [-d | --depth <number>] -c | --command <args>
 
 Options:
   -s, --status          Print status.
@@ -106,19 +121,19 @@ Miscellaneous:
   -v, --version         Display version information and exit.
       --create-conf     Create an example configuration file in script folder (if not present).
 
-You can add a $conf file in the same folder with your defaults
+You can add a $CONF_FILE file in the same folder with your defaults
 and a list of excluded repositories. Use --create-conf option.
 EOM
     echo "$msgHelp"
 }
 
 # Prints version message
-function version {
-    echo "rgit (recursive git) version $major.$minor ($releaseDate)"
+function version() {
+    echo "$NAME (recursive git) version $MAJOR.$MINOR ($RELEASE_DATE)"
 }
 
 # Converts duration between start to end to human readable
-function formatDuration {
+function formatDuration() {
     # Calculate difference between end and start (in ms)
     local d=$(( ${1} - ${2:-0} ))
     # Elapsed time in seconds (removes ms)
@@ -139,31 +154,31 @@ function formatDuration {
     printf '%02d.%03ds' $dS $dMS
 }
 
-# Defaults
-list=0
-COMMAND="status"
-MAXCOUNT=5
-MAXDEPTH=2
-THEME="dark"
-
 # Try to load configuration from file
-if [[ -r $conf ]]
+if [[ -r $CONF_FILE ]]
 then
-    . $conf
+    . $CONF_FILE
 fi
 
+gitCommand="$COMMAND"
 graphOption=""
+list=0
+maxCount=5
+maxDepth=$MAX_DEPTH
+theme=$THEME
+stat=$STAT
+
 # Parses command line
 while [[ $# -gt 0 ]]
 do
     key="$1"
     case $key in
         -d|--depth)
-        MAXDEPTH=$2
+        maxDepth=$2
         shift 2
         ;;
         -n)
-        MAXCOUNT=$2
+        maxCount=$2
         shift 2
         ;;
         -g|--graph)
@@ -172,29 +187,29 @@ do
         ;;
 
         -b|--branch-name)
-        COMMAND="rev-parse --abbrev-ref HEAD"
+        gitCommand="rev-parse --abbrev-ref HEAD"
         shift
         ;;
         -B|--branch-all)
-        COMMAND="branch --list -a -v"
+        gitCommand="branch --list -a -v"
         shift
         ;;
         -p|--pull)
-        COMMAND="pull"
+        gitCommand="pull"
         shift
         ;;
         -s|--status)
-        COMMAND="status"
+        gitCommand="status"
         shift
         ;;
         -l|--log)
-        COMMAND="log -n $MAXCOUNT$graphOption --date=local --pretty=format:'%C(bold green)%cd%Creset %C(yellow)%h%Creset -%C(bold red)%d%Creset %s %C(bold yellow)<%an>%Creset'"
+        gitCommand="log -n $maxCount$graphOption --date=local --pretty=format:'%C(bold green)%cd%Creset %C(yellow)%h%Creset -%C(bold red)%d%Creset %s %C(bold yellow)<%an>%Creset'"
         shift
         ;;
         -c|--command)
         shift
-        COMMAND="$*"
-        shift $# # Consume all arguments
+        gitCommand="$*"
+        shift $# # Consumes all arguments
         ;;
 
         --create-conf)
@@ -208,12 +223,12 @@ do
         ;;
 
         --no-color)
-        THEME='no'
+        theme="no"
         shift
         ;;
 
         -v|--version)
-        version 
+        version
         exit 0
         ;;
 
@@ -230,43 +245,43 @@ do
 done
 
 # Colors for messages
-
-case $THEME in
+cBranch=
+cDate=
+cLabel=
+cRepo=
+cReset=
+case $theme in
     dark)
-    cBranch=$colCyanLight
-    cDate=$colYellowLight
-    cLabel=$colCyanLight
-    cRepo=$colBlueLight
-    cReset=$colReset
+    cBranch=$COL_CYAN_LIGHT
+    cDate=$COL_YELLOW_LIGHT
+    cLabel=$COL_CYAN_LIGHT
+    cRepo=$COL_BLUE_LIGHT
+    cReset=$COL_RESET
     ;;
     light)
-    cBranch=$colCyan
-    cDate=$colYellow
-    cLabel=$colCyan
-    cRepo=$colBlue
-    cReset=$colReset
+    cBranch=$COL_CYAN
+    cDate=$COL_YELLOW
+    cLabel=$COL_CYAN
+    cRepo=$COL_BLUE
+    cReset=$COL_RESET
     ;;
-    no|*)
+    no)
+    ;;
+    *)
     echo "Sorry, unknown theme, use either dark|light|no"
-    cBranch=
-    cDate=
-    cLabel=
-    cRepo=
-    cReset=
     ;;
 esac
 
 base=$PWD
-nb=0
 nbExcluded=0
 # We search for .git folder so we need to go down one more
-(( MAXDEPTH++ ))
-COMMAND="git $COMMAND"
+(( maxDepth++ ))
+execCommand="git $gitCommand"
 
 # Header
 if [[ $list -eq 0 ]]
 then
-    printf 'git recursive command\n%bBase folder:%b %q\n%bCommand    :%b %s\n%bBegin      :%b %b%s%b\n' "${cLabel}" "${cReset}" "$base" "${cLabel}" "${cReset}" "$COMMAND" "${cLabel}" "${cReset}" "${cDate}" "$(date)" "${cReset}"
+    printf 'git recursive command\n%bBase folder:%b %q\n%bCommand    :%b %s\n%bBegin      :%b %b%s%b\n' "${cLabel}" "${cReset}" "$base" "${cLabel}" "${cReset}" "$execCommand" "${cLabel}" "${cReset}" "${cDate}" "$(date)" "${cReset}"
 else
     printf 'git recursive command\n%bBase folder:%b %q\n%bBegin      :%b %b%s%b\n' "${cLabel}" "${cReset}" "$base" "${cLabel}" "${cReset}" "${cDate}" "$(date)" "${cReset}"
 fi
@@ -282,9 +297,12 @@ do
 done
 IFS=$' \t\n'
 
+# Count repositories
+count=$(find . -maxdepth $maxDepth -type d -name '.git' | wc -l)
+
 if [[ $list -eq 0 ]]
 then
-    first=1
+    nb=1
 
     # Browses repositories
     while read -r dir
@@ -294,10 +312,8 @@ then
         # Repository start time
         repoStart=$(date +%s%3N)
 
-        if [[ $first -eq 1 ]]
+        if [[ $nb -ge 2 ]]
         then
-            first=0
-        else
             echo
         fi
         echo
@@ -311,29 +327,29 @@ then
         # Tests if repository is not excluded
         if [[ $excludedPaths =~ (^|:)$repoName($|:) ]]
         then
-            printf '%bRepository :%b %b%q%b %b(%s)%b (excluded)\n' "${cLabel}" "${cReset}" "${cRepo}" "$repoName" "${cReset}" "${cBranch}" "$branchName" "${cReset}"
+            printf '%bRepository :%b %b%q%b %b(%s)%b - %d/%d (excluded)\n' "${cLabel}" "${cReset}" "${cRepo}" "$repoName" "${cReset}" "${cBranch}" "$branchName" "${cReset}" "$nb" "$count"
 
             # Number of repository excluded
             (( nbExcluded++ ))
         else
-            printf '%bRepository :%b %b%q%b %b(%s)%b\n%s\n' "${cLabel}" "${cReset}" "${cRepo}" "$repoName" "${cReset}" "${cBranch}" "$branchName" "${cReset}" "$COMMAND"
+            printf '%bRepository :%b %b%q%b %b(%s)%b - %d/%d\n%s\n' "${cLabel}" "${cReset}" "${cRepo}" "$repoName" "${cReset}" "${cBranch}" "$branchName" "${cReset}" "$nb" "$count" "$execCommand"
 
             # Executes command
-            eval "$COMMAND"
+            eval "$execCommand"
 
-            # Number of repository browsed
-            (( nb++ ))
-
-            # Repository end time 
+            # Repository end time
             repoEnd=$(date +%s%3N)
             repoDuration=$(formatDuration $repoEnd $repoStart)
 
             printf '%bRepo end   :%b %b%s (%s)%b\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "$repoDuration" "${cReset}"
         fi
 
+        # Number of repository browsed
+        (( nb++ ))
+
         # Returns to base
         cd "$base" || continue
-    done < <(find . -maxdepth $MAXDEPTH -type d -name '.git')
+    done < <(find . -maxdepth $maxDepth -type d -name '.git')
 else
     # Lists repositories
     while read -r dir
@@ -354,20 +370,17 @@ else
             excludedMsg=" (excluded)"
             # Number of repository excluded
             (( nbExcluded++ ))
-        else
-            # Number of repository browsed
-            (( nb++ ))
         fi
         printf '%b%q%b %b(%s)%b%s\n' "${cRepo}" "$repoName" "${cReset}" "${cBranch}" "$branchName" "${cReset}" "$excludedMsg"
 
         # Returns to base
         cd "$base" || continue
-    done < <(find . -maxdepth $MAXDEPTH -type d -name '.git')
+    done < <(find . -maxdepth $maxDepth -type d -name '.git')
 fi
 
 # Reports
 repositoriesMsg="repository"
-if [[ $nb -ge 1 ]]
+if [[ $count -ge 1 ]]
 then
     repositoriesMsg="repositories"
 fi
@@ -379,8 +392,15 @@ fi
 
 end=$(date +%s%3N)
 duration=$(formatDuration $end $start)
-davg=$(( ($end - $start) / ($nb - $nbExcluded) ))
+davg=$(( ($end - $start) / $count ))
 avg=$(formatDuration $davg)
-printf '\n%bEnd        :%b %b%s%b\n%d %s browsed in %b%s (%s / repo)%b%s\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "${cReset}" "$nb" "$repositoriesMsg" "${cDate}" "$duration" "$avg" "${cReset}" "$excludedMsg"
+printf '\n%bEnd        :%b %b%s%b\n%d %s browsed in %b%s (%s / repo)%b%s\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "${cReset}" "$count" "$repositoriesMsg" "${cDate}" "$duration" "$avg" "${cReset}" "$excludedMsg"
+
+if [[ $stat -eq 1 ]]
+then
+    # CSV log export
+    # date ; start ; duration ; command ; repositories number ; excluded number
+    printf '%s;%d;%d;%s;%d;%d\n' "$(date)" "$start" "$(( $end - $start ))" "$execCommand" "$count" "$nbExcluded" >> "$NAME-stat.log"
+fi
 
 # This is the end
