@@ -25,9 +25,8 @@
 #               Fixes global repositories count
 # 2022/06 : v12 Sanitizes variable names and adds readonly for constants
 # 2022/06 : v13 Adds log of executions' statistics
-
-# Start time
-start=$(date +%s%3N)
+# 2022/07 : v14 Fixes missing ms in date command (MacOS compatibility)
+#               Fixes repositories order in listing
 
 # Defaults, not readonly because overridden by configuration file
 COMMAND="status"
@@ -38,9 +37,9 @@ STAT=1
 
 # Version
 readonly NAME=rgit
-readonly MAJOR=13
+readonly MAJOR=14
 readonly MINOR=0
-readonly RELEASE_DATE="2022/06/13"
+readonly RELEASE_DATE="2022/07/27"
 
 # Configuration filename
 readonly CONF_FILE=".$NAME"
@@ -58,6 +57,33 @@ readonly COL_CYAN='\033[36m'
 readonly COL_CYAN_LIGHT='\033[01;36m'
 # readonly COL_WHITE='\033[37m'
 readonly COL_RESET='\033[00m'
+
+# Tests date can return ms precision
+function isDateMs() {
+    local d=$(date +%s%3N)
+    local end=${d: -1}
+    if [[ "$end" != "N" ]]
+    then
+        echo 1
+    else
+        echo 0
+    fi
+}
+
+readonly HAS_MS=$(isDateMs)
+
+# Generates now timestamp
+function now() {
+    if [[ $HAS_MS -eq 1 ]]
+    then
+        date +%s%3N
+    else
+        date +%s000
+    fi
+}
+
+# Start time
+start=$(now)
 
 # Writes default configuration file
 function confFile() {
@@ -310,7 +336,7 @@ then
         # Go to repository folder
         cd "$dir/.." || continue
         # Repository start time
-        repoStart=$(date +%s%3N)
+        repoStart=$(now)
 
         if [[ $nb -ge 2 ]]
         then
@@ -338,7 +364,7 @@ then
             eval "$execCommand"
 
             # Repository end time
-            repoEnd=$(date +%s%3N)
+            repoEnd=$(now)
             repoDuration=$(formatDuration $repoEnd $repoStart)
 
             printf '%bRepo end   :%b %b%s (%s)%b\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "$repoDuration" "${cReset}"
@@ -349,7 +375,7 @@ then
 
         # Returns to base
         cd "$base" || continue
-    done < <(find . -maxdepth $maxDepth -type d -name '.git')
+    done < <(find . -maxdepth $maxDepth -type d -name '.git' | sort --version-sort)
 else
     # Lists repositories
     while read -r dir
@@ -375,7 +401,7 @@ else
 
         # Returns to base
         cd "$base" || continue
-    done < <(find . -maxdepth $maxDepth -type d -name '.git')
+    done < <(find . -maxdepth $maxDepth -type d -name '.git' | sort --version-sort)
 fi
 
 # Reports
@@ -390,7 +416,7 @@ then
     excludedMsg=" ($nbExcluded excluded)"
 fi
 
-end=$(date +%s%3N)
+end=$(now)
 duration=$(formatDuration $end $start)
 davg=$(( ($end - $start) / $count ))
 avg=$(formatDuration $davg)
