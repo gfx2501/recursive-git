@@ -29,6 +29,7 @@
 #               Fixes repositories order in listing
 # 2022/09 : v14.1 Formats script
 #           v14.2 Formats script
+#           v15 Adds show log command
 
 # Defaults, not readonly because overridden by configuration file
 COMMAND="status"
@@ -39,8 +40,8 @@ STAT=1
 
 # Version
 readonly NAME=rgit
-readonly MAJOR=14
-readonly MINOR=2
+readonly MAJOR=15
+readonly MINOR=0
 readonly RELEASE_DATE="2022/09/23"
 
 # Configuration filename
@@ -145,11 +146,41 @@ Miscellaneous:
   -h, --help            Display this help message and exit.
   -v, --version         Display version information and exit.
       --create-conf     Create an example configuration file in script folder (if not present).
+      --show-log        Display log of last executions
 
 You can add a $CONF_FILE file in the same folder with your defaults
 and a list of excluded repositories. Use --create-conf option.
 EOM
     echo "$msgHelp"
+}
+
+readonly LOG_MAX_LINES=28
+
+# Extracts the last lines of the log file
+function tailLog() {
+    local nb=$(wc -l < "$NAME-stat.log")
+    local nbLines=$(( nb - 1 < LOG_MAX_LINES ? nb - 1 : LOG_MAX_LINES ))
+    (echo "Date;Command;Duration;Repositories number;Excluded number" && tail -n $nbLines "$NAME-stat.log")
+}
+
+# Displays log in columns
+function columnLog() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        column -t -s ";"
+    else
+        column -t -s ";" -o " | " -e -d -N "Date,Command,Duration,Repositories number,Excluded number" -R "Duration,Repositories number,Excluded number" -H "-"
+    fi
+}
+
+# Prints log file content
+function showLog() {
+    if [[ -f "$NAME-stat.log" ]]; then
+        tailLog | columnLog | less -F -S -X -K
+    else
+        echo "No log file '$NAME-stat.log' found"
+        echo "Set STAT configuration parameter to 1 to enable storing of statistics then run commands"
+        echo "You can then use this command to see statistics"
+    fi
 }
 
 # Prints version message
@@ -226,7 +257,7 @@ while [[ $# -gt 0 ]]; do
         shift
         ;;
     -l | --log)
-        gitCommand="log -n $maxCount$graphOption --date=local --pretty=format:'%C(bold green)%cd%Creset %C(yellow)%h%Creset -%C(bold red)%d%Creset %s %C(bold yellow)<%an>%Creset'"
+        gitCommand="--no-pager log -n $maxCount$graphOption --date=local --pretty=format:'%C(bold green)%cd%Creset %C(yellow)%h%Creset -%C(bold red)%d%Creset %s %C(bold yellow)<%an>%Creset'"
         shift
         ;;
     -c | --command)
@@ -237,6 +268,11 @@ while [[ $# -gt 0 ]]; do
 
     --create-conf)
         confFile
+        exit 0
+        ;;
+
+    --show-log)
+        showLog
         exit 0
         ;;
 
@@ -358,7 +394,7 @@ if [[ $list -eq 0 ]]; then
             repoEnd=$(now)
             repoDuration=$(formatDuration "$repoEnd" "$repoStart")
 
-            printf '%bRepo end   :%b %b%s (%s)%b\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "$repoDuration" "${cReset}"
+            printf '\n%bRepo end   :%b %b%s (%s)%b\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "$repoDuration" "${cReset}"
         fi
 
         # Number of repository browsed
@@ -404,15 +440,22 @@ if [[ $nbExcluded -ge 0 ]]; then
 fi
 
 end=$(now)
-duration=$(formatDuration "$end" "$start")
-dAvg=$(((end - start) / count))
+dDuration=$((end - start))
+duration=$(formatDuration $dDuration)
+dAvg=$((dDuration / count))
 avg=$(formatDuration $dAvg)
 printf '\n%bEnd        :%b %b%s%b\n%d %s browsed in %b%s (%s / repo)%b%s\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "${cReset}" "$count" "$repositoriesMsg" "${cDate}" "$duration" "$avg" "${cReset}" "$excludedMsg"
 
 if [[ $stat -eq 1 ]]; then
+    if ! [[ -f "$NAME-stat.log" ]]; then
+        echo "Date;Command;Duration;Repositories number;Excluded number;Timestamp;Duration (ms)" >>"$NAME-stat.log"
+    fi
+    logCmd=$execCommand
+    if [[ $list -eq 1 ]]; then
+        logCmd="list"
+    fi
     # CSV log export
-    # date ; start ; duration ; command ; repositories number ; excluded number
-    printf '%s;%d;%d;%s;%d;%d\n' "$(date)" "$start" "$((end - start))" "$execCommand" "$count" "$nbExcluded" >>"$NAME-stat.log"
+    printf '%s;%s;%s;%d;%d;%d;%d\n' "$(date)" "$logCmd" "$duration" "$count" "$nbExcluded" "$start" "$dDuration" >>"$NAME-stat.log"
 fi
 
 # This is the end
