@@ -28,6 +28,7 @@
 # 2022/07 : v14 Fixes missing ms in date command (MacOS compatibility)
 #               Fixes repositories order in listing
 # 2022/09 : v14.1 Formats script
+#           v14.2 Formats script
 
 # Defaults, not readonly because overridden by configuration file
 COMMAND="status"
@@ -39,8 +40,8 @@ STAT=1
 # Version
 readonly NAME=rgit
 readonly MAJOR=14
-readonly MINOR=1
-readonly RELEASE_DATE="2022/09/15"
+readonly MINOR=2
+readonly RELEASE_DATE="2022/09/23"
 
 # Configuration filename
 readonly CONF_FILE=".$NAME"
@@ -161,20 +162,20 @@ function formatDuration() {
     # Calculate difference between end and start (in ms)
     local d=$((${1} - ${2:-0}))
     # Elapsed time in seconds (removes ms)
-    local dT=$(($d / 1000))
+    local dT=$((d / 1000))
     # Days part of the elapsed time
-    local dD=$(($dT / 60 / 60 / 24))
+    local dD=$((dT / 60 / 60 / 24))
     # Hours part of the elapsed time
-    local dH=$(($dT / 60 / 60 % 24))
+    local dH=$((dT / 60 / 60 % 24))
     # Minutes part of the elapsed time
-    local dM=$(($dT / 60 % 60))
+    local dM=$((dT / 60 % 60))
     # Seconds part of the elapsed time
-    local dS=$(($dT % 60))
+    local dS=$((dT % 60))
     # Milliseconds part of the elapsed time
-    local dMS=$(($d % 1000))
-    (($dD > 0)) && printf '%d d ' $dD
-    (($dH > 0)) && printf '%02dh' $dH
-    (($dM > 0)) && printf '%02dm' $dM
+    local dMS=$((d % 1000))
+    ((dD > 0)) && printf '%d d ' $dD
+    ((dH > 0)) && printf '%02dh' $dH
+    ((dM > 0)) && printf '%02dm' $dM
     printf '%02d.%03ds' $dS $dMS
 }
 
@@ -355,7 +356,7 @@ if [[ $list -eq 0 ]]; then
 
             # Repository end time
             repoEnd=$(now)
-            repoDuration=$(formatDuration $repoEnd $repoStart)
+            repoDuration=$(formatDuration "$repoEnd" "$repoStart")
 
             printf '%bRepo end   :%b %b%s (%s)%b\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "$repoDuration" "${cReset}"
         fi
@@ -403,15 +404,15 @@ if [[ $nbExcluded -ge 0 ]]; then
 fi
 
 end=$(now)
-duration=$(formatDuration $end $start)
-davg=$((($end - $start) / $count))
-avg=$(formatDuration $davg)
+duration=$(formatDuration "$end" "$start")
+dAvg=$(((end - start) / count))
+avg=$(formatDuration $dAvg)
 printf '\n%bEnd        :%b %b%s%b\n%d %s browsed in %b%s (%s / repo)%b%s\n' "${cLabel}" "${cReset}" "${cDate}" "$(date)" "${cReset}" "$count" "$repositoriesMsg" "${cDate}" "$duration" "$avg" "${cReset}" "$excludedMsg"
 
 if [[ $stat -eq 1 ]]; then
     # CSV log export
     # date ; start ; duration ; command ; repositories number ; excluded number
-    printf '%s;%d;%d;%s;%d;%d\n' "$(date)" "$start" "$(($end - $start))" "$execCommand" "$count" "$nbExcluded" >>"$NAME-stat.log"
+    printf '%s;%d;%d;%s;%d;%d\n' "$(date)" "$start" "$((end - start))" "$execCommand" "$count" "$nbExcluded" >>"$NAME-stat.log"
 fi
 
 # This is the end
